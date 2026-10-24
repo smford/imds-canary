@@ -19,10 +19,10 @@ type CanaryCredentials struct {
 
 // Config represents daemon runtime configuration.
 type Config struct {
-	HoneypotPort uint16
-	ListenAddr   string
-	CgroupPath   string
-	Credentials  CanaryCredentials
+	HoneypotPort  uint16
+	ListenAddr    string
+	CgroupPath    string
+	Credentials   CanaryCredentials
 	LogLevel      string
 	DryRun        bool // Useful for testing without attaching eBPF to cgroup
 	ShowVersion   bool

@@ -18,18 +18,18 @@ import (
 
 // AlertPayload defines the structured notification sent to external webhooks.
 type AlertPayload struct {
-	Timestamp            time.Time             `json:"timestamp"`
-	AlertType            string                `json:"alert_type"`
-	HostName             string                `json:"hostname"`
-	PID                  uint32                `json:"pid"`
-	TID                  uint32                `json:"tid"`
-	UID                  uint32                `json:"uid"`
-	GID                  uint32                `json:"gid"`
-	Comm                 string                `json:"comm"`
-	OriginalDestination  string                `json:"original_destination"`
-	RedirectDestination  string                `json:"redirect_destination"`
-	CanaryRole           string                `json:"canary_role"`
-	ProcessSnapshot      *proc.ProcessSnapshot `json:"process,omitempty"`
+	Timestamp           time.Time             `json:"timestamp"`
+	AlertType           string                `json:"alert_type"`
+	HostName            string                `json:"hostname"`
+	PID                 uint32                `json:"pid"`
+	TID                 uint32                `json:"tid"`
+	UID                 uint32                `json:"uid"`
+	GID                 uint32                `json:"gid"`
+	Comm                string                `json:"comm"`
+	OriginalDestination string                `json:"original_destination"`
+	RedirectDestination string                `json:"redirect_destination"`
+	CanaryRole          string                `json:"canary_role"`
+	ProcessSnapshot     *proc.ProcessSnapshot `json:"process,omitempty"`
 }
 
 // WebhookSender sends alert notifications to an external HTTP webhook.
