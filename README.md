@@ -9,6 +9,8 @@
 
 Instead of letting an attacker steal your real cloud credentials—or simply blocking the request and tipping them off—`imds-canary` transparently redirects the connection to an embedded Go honeypot, hands the intruder a trackable **AWS Canarytoken**, resolves the full calling process tree via `/proc`, and alerts your security team in real time.
 
+![Live Interception & Process Forensics](docs/images/hero-interception-terminal.svg)
+
 ---
 
 ## The Problem in Plain English

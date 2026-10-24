@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 450" width="100%" height="100%">
+  <defs>
+    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="110%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Slack App Background -->
+  <g filter="url(#cardShadow)">
+    <rect x="20" y="20" width="900" height="410" rx="10" fill="#1a1d21" stroke="#2c3136" stroke-width="1.2" />
+
+    <!-- Channel Header -->
+    <rect x="20" y="20" width="900" height="46" rx="10" fill="#222529" />
+    <text x="44" y="48" fill="#e8eaed" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700">#sec-incident-alerts</text>
+    <text x="180" y="48" fill="#9aa0a6" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13">| Automated threat containment notifications</text>
+  </g>
+
+  <!-- Bot Avatar and Name -->
+  <rect x="44" y="86" width="38" height="38" rx="8" fill="#1264a3" />
+  <text x="63" y="110" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" text-anchor="middle">🛡️</text>
+
+  <text x="94" y="102" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="700">imds-canary-bot</text>
+  <rect x="220" y="88" width="34" height="18" rx="4" fill="#3c4043" />
+  <text x="237" y="101" fill="#dadce0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="700" text-anchor="middle">APP</text>
+  <text x="264" y="101" fill="#9aa0a6" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12">Today at 2:30 AM</text>
+
+  <!-- Slack Attachment Message Card -->
+  <g transform="translate(94, 126)">
+    <!-- Threat Red Bar -->
+    <rect x="0" y="0" width="4" height="270" rx="2" fill="#e01e5a" />
+    <!-- Attachment Background Box -->
+    <rect x="4" y="0" width="800" height="270" rx="0" fill="#222529" stroke="#35373b" stroke-width="0.8" />
+
+    <!-- Card Title -->
+    <text x="24" y="28" fill="#f28b82" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="700">🚨 CRITICAL: Unauthorized AWS IMDS Access Blocked &amp; Attributed</text>
+    <text x="24" y="48" fill="#9aa0a6" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12">A rogue process attempted link-local metadata exfiltration on production infrastructure.</text>
+
+    <!-- Column 1 Fields -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12">
+      <text x="24" y="80" fill="#9aa0a6" font-weight="600">HOST &amp; INSTANCE</text>
+      <text x="24" y="98" fill="#e8eaed" font-family="ui-monospace, monospace" font-size="12">ec2-prod-web01 (i-03fa99b418)</text>
+
+      <text x="24" y="126" fill="#9aa0a6" font-weight="600">PROCESS IDENTITY</text>
+      <text x="24" y="144" fill="#e8eaed" font-family="ui-monospace, monospace" font-size="12">curl (PID: 4912, User: www-data [33])</text>
+
+      <text x="24" y="172" fill="#9aa0a6" font-weight="600">CONTAINMENT ACTION</text>
+      <text x="24" y="190" fill="#f28b82" font-weight="bold">⚡ SIGKILL Executed (Process Terminated)</text>
+    </g>
+
+    <!-- Column 2 Fields -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12">
+      <text x="420" y="80" fill="#9aa0a6" font-weight="600">CANARY TOKEN VENDED</text>
+      <text x="420" y="98" fill="#fdd663" font-family="ui-monospace, monospace" font-size="12">AKIA-TRIPWIRE-9142 (Trap Active)</text>
+
+      <text x="420" y="126" fill="#9aa0a6" font-weight="600">PROCESS LINEAGE (ANCESTRY)</text>
+      <text x="420" y="144" fill="#8ab4f8" font-family="ui-monospace, monospace" font-size="11.5">systemd (1) ➔ gunicorn (4102) ➔ python3 (4890) ➔ curl</text>
+
+      <text x="420" y="172" fill="#9aa0a6" font-weight="600">WORKING DIRECTORY</text>
+      <text x="420" y="190" fill="#e8eaed" font-family="ui-monospace, monospace" font-size="12">/var/www/vulnerable-api</text>
+    </g>
+
+    <!-- Full Cmdline Box -->
+    <rect x="24" y="206" width="760" height="26" rx="4" fill="#181a1d" stroke="#3c4043" stroke-width="0.8" />
+    <text x="34" y="223" fill="#81c995" font-family="ui-monospace, monospace" font-size="11">curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/prod-role</text>
+
+    <!-- Interactive Slack Buttons -->
+    <rect x="24" y="240" width="124" height="22" rx="4" fill="#d93025" />
+    <text x="86" y="255" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10.5" font-weight="bold" text-anchor="middle">Isolate EC2 Host</text>
+
+    <rect x="156" y="240" width="134" height="22" rx="4" fill="#2c3136" stroke="#5f6368" stroke-width="0.8" />
+    <text x="223" y="255" fill="#e8eaed" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10.5" font-weight="600" text-anchor="middle">View Process Tree</text>
+
+    <rect x="298" y="240" width="134" height="22" rx="4" fill="#2c3136" stroke="#5f6368" stroke-width="0.8" />
+    <text x="365" y="255" fill="#e8eaed" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10.5" font-weight="600" text-anchor="middle">CloudTrail Telemetry</text>
+  </g>
+</svg>

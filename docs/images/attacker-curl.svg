@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 440" width="100%" height="100%">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#21252b" />
+      <stop offset="100%" stop-color="#181a1f" />
+    </linearGradient>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1b1d23" />
+      <stop offset="100%" stop-color="#121417" />
+    </linearGradient>
+  </defs>
+
+  <!-- Attacker Terminal Window -->
+  <g filter="url(#shadow)">
+    <rect x="20" y="20" width="900" height="400" rx="12" fill="url(#bodyGrad)" stroke="#30363d" stroke-width="1.5" />
+    <!-- Titlebar -->
+    <path d="M 20 32 A 12 12 0 0 1 32 20 L 908 20 A 12 12 0 0 1 920 32 L 920 62 L 20 62 Z" fill="url(#headerGrad)" stroke="#30363d" stroke-width="1.5" />
+    <!-- Window Control Buttons -->
+    <circle cx="44" cy="41" r="6.5" fill="#ff5f56" stroke="#e0443e" stroke-width="0.5" />
+    <circle cx="66" cy="41" r="6.5" fill="#ffbd2e" stroke="#dea123" stroke-width="0.5" />
+    <circle cx="88" cy="41" r="6.5" fill="#27c93f" stroke="#1aab29" stroke-width="0.5" />
+    <!-- Window Title -->
+    <text x="470" y="45" fill="#abb2bf" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600" text-anchor="middle">attacker@kali: ~ (SSRF / Shell session)</text>
+    <rect x="790" y="32" width="114" height="18" rx="4" fill="#3f1c24" stroke="#ff5555" stroke-width="1" />
+    <text x="847" y="45" fill="#ff79c6" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" font-weight="600" text-anchor="middle">TRAPPED IN HONEYPOT</text>
+  </g>
+
+  <!-- Attacker Command and Response -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12.5" xml:space="preserve">
+    <!-- Prompt -->
+    <text x="45" y="94">
+      <tspan fill="#e06c75" font-weight="bold">attacker@kali</tspan><tspan fill="#5c6370">:</tspan><tspan fill="#61afef">~#</tspan>
+      <tspan fill="#abb2bf"> curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/prod-role | jq .</tspan>
+    </text>
+
+    <!-- Fake AWS STS Credentials Dispatched to Attacker -->
+    <text x="45" y="124" fill="#abb2bf">{</text>
+    <text x="65" y="144" fill="#e06c75">  &quot;Code&quot;</text><text x="125" y="144" fill="#abb2bf">: </text><text x="145" y="144" fill="#98c379">&quot;Success&quot;</text><text x="215" y="144" fill="#abb2bf">,</text>
+    <text x="65" y="164" fill="#e06c75">  &quot;LastUpdated&quot;</text><text x="180" y="164" fill="#abb2bf">: </text><text x="200" y="164" fill="#98c379">&quot;2026-10-24T02:30:11Z&quot;</text><text x="390" y="164" fill="#abb2bf">,</text>
+    <text x="65" y="184" fill="#e06c75">  &quot;Type&quot;</text><text x="125" y="184" fill="#abb2bf">: </text><text x="145" y="184" fill="#98c379">&quot;AWS-HMAC&quot;</text><text x="235" y="184" fill="#abb2bf">,</text>
+    <text x="65" y="204" fill="#e06c75">  &quot;AccessKeyId&quot;</text><text x="185" y="204" fill="#abb2bf">: </text><text x="205" y="204" fill="#d19a66" font-weight="bold">&quot;AKIA-TRIPWIRE-9142&quot;</text><text x="390" y="204" fill="#abb2bf">,</text>
+    <text x="65" y="224" fill="#e06c75">  &quot;SecretAccessKey&quot;</text><text x="210" y="224" fill="#abb2bf">: </text><text x="230" y="224" fill="#98c379">&quot;4Fk9xQv7B2wL1pM0rT5yH8nJ9sK4cZ1vX7mQ2zW6&quot;</text><text x="615" y="224" fill="#abb2bf">,</text>
+    <text x="65" y="244" fill="#e06c75">  &quot;Token&quot;</text><text x="135" y="244" fill="#abb2bf">: </text><text x="155" y="244" fill="#98c379">&quot;IQoJb3JpZ2luX2VjEA...[Canary AWS Session Token]...v8A==&quot;</text><text x="735" y="244" fill="#abb2bf">,</text>
+    <text x="65" y="264" fill="#e06c75">  &quot;Expiration&quot;</text><text x="175" y="264" fill="#abb2bf">: </text><text x="195" y="264" fill="#98c379">&quot;2026-10-24T08:30:11Z&quot;</text>
+    <text x="45" y="284" fill="#abb2bf">}</text>
+
+    <!-- Signal Termination Output -->
+    <rect x="42" y="306" width="856" height="32" rx="6" fill="#2d161a" stroke="#e06c75" stroke-width="0.8" />
+    <text x="56" y="327" fill="#e06c75" font-weight="bold">Killed</text>
+    <text x="110" y="327" fill="#5c6370">(SIGKILL terminated process 4912 immediately after IMDS response dispatch)</text>
+
+    <!-- Attacker Tries using the stolen Canary in AWS CLI -->
+    <text x="45" y="364">
+      <tspan fill="#e06c75" font-weight="bold">attacker@kali</tspan><tspan fill="#5c6370">:</tspan><tspan fill="#61afef">~#</tspan>
+      <tspan fill="#abb2bf"> aws s3 ls --profile stolen-creds</tspan>
+    </text>
+    <text x="45" y="388" fill="#e5c07b">An error occurred (AccessDenied) when calling the ListBuckets operation: User is not authorized.</text>
+    <text x="45" y="406" fill="#98c379"># 🎯 AWS CloudTrail immediately fires alert: Canarytoken AKIA-TRIPWIRE-9142 accessed by IP 198.51.100.44!</text>
+  </g>
+</svg>

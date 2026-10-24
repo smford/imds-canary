@@ -86,11 +86,18 @@ jobs:
           python3 -c '
           import os
           p = "docs/index.html"
-          if os.path.exists("docs/js/analytics.js") and os.path.exists(p):
+          if os.path.exists(p):
               content = open(p, encoding="utf-8").read()
-              if "js/analytics.js" not in content:
+              if "custom.css" not in content and os.path.exists("docs/custom.css"):
+                  content = content.replace("</head>", "  <link rel=\"stylesheet\" href=\"custom.css\">\n</head>")
+              if "<title>Documentation</title>" in content:
+                  content = content.replace("<title>Documentation</title>", "<title>imds-canary — eBPF IMDS Honeypot &amp; Attribution Daemon</title>")
+              if "id=\"site-title\">Documentation</a>" in content:
+                  content = content.replace("id=\"site-title\">Documentation</a>", "id=\"site-title\"><span style=\"font-weight:700\">🛡️ imds-canary</span></a>")
+              if os.path.exists("docs/js/analytics.js") and "js/analytics.js" not in content:
                   tag = """  <!-- Google Analytics 4 (GA4) -->\n  <script async src="https://www.googletagmanager.com/gtag/js?id=imds-canary"></script>\n  <script>\n    window.dataLayer = window.dataLayer || [];\n    function gtag(){dataLayer.push(arguments);}\n    gtag("js", new Date());\n    gtag("config", "imds-canary", { send_page_view: false });\n  </script>\n  <script src="js/analytics.js" defer></script>\n</head>"""
-                  open(p, "w", encoding="utf-8").write(content.replace("</head>", tag))
+                  content = content.replace("</head>", tag)
+              open(p, "w", encoding="utf-8").write(content)
           '
 
       - name: Upload Pages artifact
