@@ -58,4 +58,3 @@ release:
   prerelease: auto
   mode: replace
   replace_existing_artifacts: true
-
