@@ -1,0 +1,31 @@
+[Unit]
+Description=AWS IMDS eBPF Security Canary & Process Attribution Daemon
+Documentation=https://github.com/smford/imds-canary
+After=network.target local-fs.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/imds-canary -port 18080 -cgroup /sys/fs/cgroup -role production-infra-role
+Restart=always
+RestartSec=3s
+
+# Security hardening and least-privilege sandboxing
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=false
+MemoryDenyWriteExecute=true
+LimitMEMLOCK=infinity
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=imds-canary
+
+[Install]
+WantedBy=multi-user.target

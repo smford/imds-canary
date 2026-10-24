@@ -29,6 +29,9 @@ type Config struct {
 	WebhookURL    string
 	WebhookSecret string
 	TestIntercept bool
+	Allowlist     string
+	Action        string
+	LogFormat     string
 }
 
 // DefaultConfig returns safe and functional default settings.
@@ -50,6 +53,9 @@ func DefaultConfig() *Config {
 		WebhookURL:    os.Getenv("CANARY_WEBHOOK_URL"),
 		WebhookSecret: os.Getenv("CANARY_WEBHOOK_SECRET"),
 		TestIntercept: false,
+		Allowlist:     getEnvOrDefault("CANARY_ALLOWLIST", ""),
+		Action:        getEnvOrDefault("CANARY_ACTION", "alert"),
+		LogFormat:     getEnvOrDefault("CANARY_LOG_FORMAT", "json"),
 	}
 }
 
@@ -70,6 +76,9 @@ func ParseFlags(args []string) (*Config, error) {
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "Run HTTP honeypot only without attaching eBPF")
 	fs.StringVar(&cfg.WebhookURL, "webhook-url", cfg.WebhookURL, "URL for asynchronous real-time alert webhooks")
 	fs.StringVar(&cfg.WebhookSecret, "webhook-secret", cfg.WebhookSecret, "Shared HMAC secret for X-Canary-Signature webhook signing")
+	fs.StringVar(&cfg.Allowlist, "allowlist", cfg.Allowlist, "Comma-separated process names or paths permitted to access IMDS")
+	fs.StringVar(&cfg.Action, "action", cfg.Action, "Mitigation action on rogue access (alert, pause, kill, none)")
+	fs.StringVar(&cfg.LogFormat, "log-format", cfg.LogFormat, "Alert log format (json, text, cef)")
 	fs.BoolVar(&cfg.TestIntercept, "test-intercept", false, "Run diagnostic self-test interception event and exit")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print version information and exit")
 	fs.BoolVar(&cfg.ShowVersion, "v", false, "Print version information and exit (shorthand)")

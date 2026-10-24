@@ -15,6 +15,7 @@ import (
 	"github.com/smford/imds-canary/internal/config"
 	"github.com/smford/imds-canary/internal/honeypot"
 	"github.com/smford/imds-canary/internal/metrics"
+	"github.com/smford/imds-canary/internal/policy"
 	"github.com/smford/imds-canary/internal/proc"
 	"github.com/smford/imds-canary/internal/version"
 )
@@ -41,7 +42,7 @@ func run(args []string) error {
 		return nil
 	}
 
-	// Initialize structured slog JSON logger
+	// Initialize structured logger
 	var level slog.Level
 	switch cfg.LogLevel {
 	case "debug":
@@ -54,9 +55,14 @@ func run(args []string) error {
 		level = slog.LevelInfo
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	}))
+	var handler slog.Handler
+	if cfg.LogFormat == "text" {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	}
+
+	logger := slog.New(handler)
 	slog.SetDefault(logger)
 
 	hostname, _ := os.Hostname()
@@ -65,8 +71,9 @@ func run(args []string) error {
 	webhookSender := alerting.NewWebhookSender(cfg.WebhookURL, cfg.WebhookSecret, logger)
 	defer webhookSender.Stop()
 
-	// Initialize Process Attribution Inspector
+	// Initialize Process Attribution Inspector & Policy Allowlist
 	inspector := proc.NewInspector()
+	allowlist := policy.NewAllowlist(cfg.Allowlist)
 
 	// Diagnostic self-test interception mode
 	if cfg.TestIntercept {
@@ -94,13 +101,17 @@ func run(args []string) error {
 			ProcessSnapshot:     snap,
 		}
 
-		logger.Warn("DIAGNOSTIC SECURITY ALERT: Test Probe Executed",
-			slog.String("alert_type", alert.AlertType),
-			slog.Uint64("pid", uint64(pid)),
-			slog.String("comm", alert.Comm),
-			slog.String("exe", snap.Exe),
-			slog.Any("cmdline", snap.Cmdline),
-		)
+		if cfg.LogFormat == "cef" {
+			fmt.Println(alerting.FormatCEF(alert, 5))
+		} else {
+			logger.Warn("DIAGNOSTIC SECURITY ALERT: Test Probe Executed",
+				slog.String("alert_type", alert.AlertType),
+				slog.Uint64("pid", uint64(pid)),
+				slog.String("comm", alert.Comm),
+				slog.String("exe", snap.Exe),
+				slog.Any("cmdline", snap.Cmdline),
+			)
+		}
 
 		if cfg.WebhookURL != "" {
 			webhookSender.Send(alert)
@@ -116,6 +127,8 @@ func run(args []string) error {
 		slog.Uint64("honeypot_port", uint64(cfg.HoneypotPort)),
 		slog.String("cgroup_path", cfg.CgroupPath),
 		slog.String("canary_role", cfg.Credentials.RoleName),
+		slog.String("mitigation_action", cfg.Action),
+		slog.Int("allowlist_rules", allowlist.Size()),
 		slog.Bool("dry_run", cfg.DryRun),
 		slog.Bool("webhook_configured", cfg.WebhookURL != ""),
 	)
@@ -152,39 +165,64 @@ func run(args []string) error {
 			snap := inspector.Inspect(evt.TGID, evt.UID, evt.GID, evt.Comm)
 			metrics.Default.IncProcsResolved(snap.Exited)
 
-			logger.Warn("SECURITY ALERT: AWS IMDS Interception",
-				slog.String("alert_type", "IMDS_PROBE_DETECTED"),
-				slog.Uint64("pid", uint64(evt.TGID)),
-				slog.Uint64("tid", uint64(evt.PID)),
-				slog.Uint64("uid", uint64(evt.UID)),
-				slog.Uint64("gid", uint64(evt.GID)),
-				slog.String("comm", evt.Comm),
-				slog.String("original_destination", fmt.Sprintf("%s:%d", evt.OrigDstIP, evt.TargetPort)),
-				slog.String("redirected_destination", fmt.Sprintf("%s:%d", evt.RedirDstIP, evt.RedirPort)),
-				slog.String("exe", snap.Exe),
-				slog.Any("cmdline", snap.Cmdline),
-				slog.String("cwd", snap.Cwd),
-				slog.Uint64("ppid", uint64(snap.PPID)),
-				slog.Any("ancestry", snap.Ancestry),
-				slog.Bool("process_exited", snap.Exited),
-			)
+			// Check process allowlist
+			if allowlist.IsAllowed(evt.Comm, snap.Exe) {
+				logger.Info("IMDS access by allowlisted process",
+					slog.String("status", "ALLOWLISTED"),
+					slog.Uint64("pid", uint64(evt.TGID)),
+					slog.String("comm", evt.Comm),
+					slog.String("exe", snap.Exe),
+				)
+				return
+			}
+
+			// Apply containment mitigation action
+			mitigationResult, mitErr := policy.ExecuteMitigation(policy.MitigationAction(cfg.Action), evt.TGID)
+			if mitErr != nil {
+				logger.Error("containment mitigation failed", slog.String("error", mitErr.Error()))
+			}
+
+			alert := alerting.AlertPayload{
+				Timestamp:           time.Now().UTC(),
+				AlertType:           "IMDS_PROBE_DETECTED",
+				HostName:            hostname,
+				PID:                 evt.TGID,
+				TID:                 evt.PID,
+				UID:                 evt.UID,
+				GID:                 evt.GID,
+				Comm:                evt.Comm,
+				OriginalDestination: fmt.Sprintf("%s:%d", evt.OrigDstIP, evt.TargetPort),
+				RedirectDestination: fmt.Sprintf("%s:%d", evt.RedirDstIP, evt.RedirPort),
+				CanaryRole:          cfg.Credentials.RoleName,
+				ProcessSnapshot:     snap,
+			}
+
+			if cfg.LogFormat == "cef" {
+				fmt.Println(alerting.FormatCEF(alert, 9))
+			} else {
+				logger.Warn("SECURITY ALERT: AWS IMDS Interception",
+					slog.String("alert_type", alert.AlertType),
+					slog.Uint64("pid", uint64(evt.TGID)),
+					slog.Uint64("tid", uint64(evt.PID)),
+					slog.Uint64("uid", uint64(evt.UID)),
+					slog.Uint64("gid", uint64(evt.GID)),
+					slog.String("comm", evt.Comm),
+					slog.String("original_destination", alert.OriginalDestination),
+					slog.String("redirected_destination", alert.RedirectDestination),
+					slog.String("exe", snap.Exe),
+					slog.Any("cmdline", snap.Cmdline),
+					slog.String("cwd", snap.Cwd),
+					slog.Uint64("ppid", uint64(snap.PPID)),
+					slog.Any("ancestry", snap.Ancestry),
+					slog.String("mitigation_action", cfg.Action),
+					slog.String("mitigation_result", mitigationResult),
+					slog.Bool("process_exited", snap.Exited),
+				)
+			}
 
 			// Dispatch webhook notification
 			if cfg.WebhookURL != "" {
-				webhookSender.Send(alerting.AlertPayload{
-					Timestamp:           time.Now().UTC(),
-					AlertType:           "IMDS_PROBE_DETECTED",
-					HostName:            hostname,
-					PID:                 evt.TGID,
-					TID:                 evt.PID,
-					UID:                 evt.UID,
-					GID:                 evt.GID,
-					Comm:                evt.Comm,
-					OriginalDestination: fmt.Sprintf("%s:%d", evt.OrigDstIP, evt.TargetPort),
-					RedirectDestination: fmt.Sprintf("%s:%d", evt.RedirDstIP, evt.RedirPort),
-					CanaryRole:          cfg.Credentials.RoleName,
-					ProcessSnapshot:     snap,
-				})
+				webhookSender.Send(alert)
 			}
 		})
 
