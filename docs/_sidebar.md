@@ -1,0 +1,8 @@
+- [Overview](index.md)
+- [Getting Started](getting-started.md)
+- [Architecture & eBPF](architecture.md)
+- [Configuration](configuration.md)
+- [Threat Model & Deception](threat-model.md)
+- [Worked Examples](worked-examples.md)
+- [Observability & Metrics](observability.md)
+- [GitHub Repository](https://github.com/smford/imds-canary)
