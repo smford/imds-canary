@@ -25,6 +25,7 @@ type Config struct {
 	Credentials  CanaryCredentials
 	LogLevel     string
 	DryRun       bool // Useful for testing without attaching eBPF to cgroup
+	ShowVersion  bool
 }
 
 // DefaultConfig returns safe and functional default settings.
@@ -61,6 +62,8 @@ func ParseFlags(args []string) (*Config, error) {
 	fs.StringVar(&cfg.Credentials.SecretAccessKey, "secret-access-key", cfg.Credentials.SecretAccessKey, "Canary AWS Secret Access Key")
 	fs.StringVar(&cfg.Credentials.Token, "session-token", cfg.Credentials.Token, "Canary AWS Session Token")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "Run HTTP honeypot only without attaching eBPF")
+	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print version information and exit")
+	fs.BoolVar(&cfg.ShowVersion, "v", false, "Print version information and exit (shorthand)")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err

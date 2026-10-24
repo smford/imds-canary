@@ -14,6 +14,7 @@ import (
 	"github.com/smford/imds-canary/internal/config"
 	"github.com/smford/imds-canary/internal/honeypot"
 	"github.com/smford/imds-canary/internal/proc"
+	"github.com/smford/imds-canary/internal/version"
 )
 
 func main() {
@@ -24,9 +25,18 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && (args[0] == "version" || args[0] == "-version" || args[0] == "--version" || args[0] == "-v") {
+		version.Print()
+		return nil
+	}
+
 	cfg, err := config.ParseFlags(args)
 	if err != nil {
 		return err
+	}
+	if cfg.ShowVersion {
+		version.Print()
+		return nil
 	}
 
 	// Initialize structured slog JSON logger
