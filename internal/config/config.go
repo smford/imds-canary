@@ -20,6 +20,7 @@ type CanaryCredentials struct {
 // Config represents daemon runtime configuration.
 type Config struct {
 	HoneypotPort  uint16
+	BindAddr      string
 	ListenAddr    string
 	CgroupPath    string
 	Credentials   CanaryCredentials
@@ -36,9 +37,12 @@ type Config struct {
 
 // DefaultConfig returns safe and functional default settings.
 func DefaultConfig() *Config {
+	bindAddr := getEnvOrDefault("CANARY_BIND_ADDR", "127.0.0.1")
+	port := uint16(18080)
 	return &Config{
-		HoneypotPort: 18080,
-		ListenAddr:   "127.0.0.1:18080",
+		HoneypotPort: port,
+		BindAddr:     bindAddr,
+		ListenAddr:   fmt.Sprintf("%s:%d", bindAddr, port),
 		CgroupPath:   "/sys/fs/cgroup",
 		Credentials: CanaryCredentials{
 			AccessKeyID:     getEnvOrDefault("CANARY_ACCESS_KEY_ID", "AKIAEXAMPLECANARYKEY1"),
@@ -67,6 +71,7 @@ func ParseFlags(args []string) (*Config, error) {
 
 	var port int
 	fs.IntVar(&port, "port", int(cfg.HoneypotPort), "Honeypot HTTP listen port")
+	fs.StringVar(&cfg.BindAddr, "bind", cfg.BindAddr, "Honeypot HTTP bind address (e.g. 127.0.0.1 or 0.0.0.0)")
 	fs.StringVar(&cfg.CgroupPath, "cgroup", cfg.CgroupPath, "Cgroup v2 root path for eBPF attachment")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Log level (debug, info, warn, error)")
 	fs.StringVar(&cfg.Credentials.RoleName, "role", cfg.Credentials.RoleName, "Mock IAM role name")
@@ -91,7 +96,10 @@ func ParseFlags(args []string) (*Config, error) {
 		return nil, fmt.Errorf("invalid port %d: must be between 1 and 65535", port)
 	}
 	cfg.HoneypotPort = uint16(port)
-	cfg.ListenAddr = fmt.Sprintf("127.0.0.1:%d", cfg.HoneypotPort)
+	if cfg.BindAddr == "" {
+		cfg.BindAddr = "127.0.0.1"
+	}
+	cfg.ListenAddr = fmt.Sprintf("%s:%d", cfg.BindAddr, cfg.HoneypotPort)
 
 	return cfg, nil
 }

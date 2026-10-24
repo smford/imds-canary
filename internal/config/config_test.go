@@ -28,7 +28,7 @@ func TestParseFlags(t *testing.T) {
 	}{
 		{
 			name:        "custom port and role",
-			args:        []string{"-port", "19090", "-role", "custom-role", "-dry-run"},
+			args:        []string{"-port", "19090", "-role", "custom-role", "-bind", "0.0.0.0", "-dry-run"},
 			expectPort:  19090,
 			expectRole:  "custom-role",
 			expectDry:   true,

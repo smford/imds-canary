@@ -29,4 +29,4 @@ EXPOSE 18080
 USER nonroot:nonroot
 
 ENTRYPOINT ["/usr/local/bin/imds-canary"]
-CMD ["-dry-run", "-port", "18080"]
+CMD ["-dry-run", "-port", "18080", "-bind", "0.0.0.0"]

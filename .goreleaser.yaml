@@ -49,3 +49,11 @@ changelog:
       - Merge pull request
       - Merge remote-tracking branch
       - Merge branch
+
+release:
+  github:
+    owner: smford
+    name: imds-canary
+  draft: false
+  prerelease: auto
+  mode: replace

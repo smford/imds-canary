@@ -68,7 +68,7 @@ fi
 # 3. Wait for daemon to be ready
 echo "[*] Waiting for honeypot to listen on 127.0.0.1:${PORT}..."
 READY=false
-for i in {1..30}; do
+for _ in {1..30}; do
     if curl -s -m 1 "http://127.0.0.1:${PORT}/latest/meta-data/" >/dev/null 2>&1; then
         READY=true
         break

@@ -35,7 +35,7 @@ jobs:
 
       - name: Start service daemon
         run: |
-          docker run -d --name imds-canary-daemon -p 18080:18080 imds-canary-dast:local -dry-run -port 18080
+          docker run -d --name imds-canary-daemon -p 18080:18080 imds-canary-dast:local -dry-run -port 18080 -bind 0.0.0.0
 
       - name: Await daemon readiness (/healthz)
         run: |
