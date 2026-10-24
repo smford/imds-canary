@@ -1,12 +1,40 @@
 # imds-canary
 
-`imds-canary` is a host security daemon written in Go that uses an eBPF socket hook to intercept processes attempting to query the AWS link-local Instance Metadata Service (IMDS: `169.254.169.254:80`).
+[![CI](https://github.com/smford/imds-canary/actions/workflows/ci.yml/badge.svg)](https://github.com/smford/imds-canary/actions/workflows/ci.yml)
+[![SAST](https://github.com/smford/imds-canary/actions/workflows/sast.yml/badge.svg)](https://github.com/smford/imds-canary/actions/workflows/sast.yml)
+[![OpenSSF Scorecard](https://github.com/smford/imds-canary/actions/workflows/scorecard.yml/badge.svg)](https://github.com/smford/imds-canary/actions/workflows/scorecard.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-The daemon transparently redirects outbound connections to a local Go HTTP honeypot (`127.0.0.1:18080`), resolves the calling process tree (including executable path, command-line arguments, working directory, and ancestor chain) via host `/proc`, and vends trackable AWS Canary tokens while emitting structured security alerts.
+**`imds-canary`** is a host security daemon for Linux servers and containers that silently intercepts rogue processes attempting to steal cloud credentials from the AWS Instance Metadata Service (IMDS: `169.254.169.254`).
+
+Instead of letting an attacker steal your real cloud credentials—or simply blocking the request and tipping them off—`imds-canary` transparently redirects the connection to an embedded Go honeypot, hands the intruder a trackable **AWS Canarytoken**, resolves the full calling process tree via `/proc`, and alerts your security team in real time.
 
 ---
 
-## Architecture & How It Works
+## The Problem in Plain English
+
+Every virtual machine running in AWS has access to a special internal IP address: `169.254.169.254`. This is the **Instance Metadata Service (IMDS)**. When software running on that machine needs to talk to AWS services (like S3, DynamoDB, or Secrets Manager), it queries this IP address to automatically receive temporary IAM security credentials.
+
+While convenient for legitimate applications, IMDS is **public enemy number one in cloud breaches**:
+
+1. **The Instant Reflex of Every Cloud Intruder**:
+   The moment an attacker exploits a Server-Side Request Forgery (SSRF) bug in your web app, escapes a container, or executes code through a compromised npm/PyPI package, their very first command is almost always:
+   ```bash
+   curl http://169.254.169.254/latest/meta-data/iam/security-credentials/
+   ```
+   They do this because it instantly hands them the keys to your cloud infrastructure.
+
+2. **Silent Exfiltration & CloudTrail Blind Spots**:
+   Once stolen, attackers copy those credentials off your server and use them from their own laptops. Traditional cloud auditing (AWS CloudTrail) can only tell you that a credential was used; **it cannot tell you which process on your server stole it**, what command-line flags were passed, or what user ran it.
+
+3. **The Catch-22 of Blocking IMDS**:
+   If you block IMDS outright with firewall rules, attackers immediately know you detected them and switch to stealthier persistence. Furthermore, legitimate management tools (like the AWS Systems Manager Agent) may break.
+
+---
+
+## How `imds-canary` Solves This
+
+`imds-canary` turns the attacker's favorite technique into an invisible trap:
 
 ```
                      ┌────────────────────────────────────────┐
@@ -15,7 +43,7 @@ The daemon transparently redirects outbound connections to a local Go HTTP honey
                                         │ connect(169.254.169.254:80)
                                         ▼
              ┌────────────────────────────────────────────────────────┐
-             │       Kernel eBPF Hook (cgroup/connect4)               │
+             │       Kernel eBPF Socket Hook (cgroup/connect4)        │
              │       - Rewrites destination: 127.0.0.1:18080          │
              │       - Emits calling PID/TGID/UID into BPF Ring Buffer│
              └──────────────┬─────────────────────────┬───────────────┘
@@ -33,192 +61,146 @@ The daemon transparently redirects outbound connections to a local Go HTTP honey
                    └──────────────────┬───────────────────────┘
                                       ▼
              ┌────────────────────────────────────────────────────────┐
-             │         Structured JSON Security Alert                 │
-             │ (slog: alert_type, PID, exe, cmdline, canary credentials)
+             │         Structured Security Telemetry & Action         │
+             │ - JSON & ArcSight CEF Syslog Alerts                    │
+             │ - Asynchronous Webhook Egress (Slack, SIEM)            │
+             │ - Prometheus Telemetry (/metrics)                      │
+             │ - Active Threat Containment (SIGKILL / SIGSTOP)        │
              └────────────────────────────────────────────────────────┘
 ```
 
-1. **Kernel Hook & Transparent Redirection**:
-   - Attached to the cgroup v2 root via `cgroup/connect4` (`BPF_PROG_TYPE_CGROUP_SOCK_ADDR` on `BPF_CGROUP_INET4_CONNECT`).
-   - When any socket initiates a connection to `169.254.169.254:80` (`0xFEA9FEA9` in network byte order):
-     - The hook rewrites the destination IP to `127.0.0.1` and port to `18080` (or configured honeypot port).
-     - Submits a telemetry event into a BPF Ring Buffer map (`events`) with caller `tgid`, `pid`, `uid`, `gid`, and target port.
-     - Returns `1` (`allow`) to proceed with the transparently redirected connection.
+1. **Invisible Trap at the Socket Layer**:
+   Using modern Linux eBPF (`cgroup/connect4`), `imds-canary` catches connection attempts directly in the Linux kernel before packets even hit the network stack. Normal network traffic is untouched.
 
-2. **Process Attribution Engine**:
-   - Consumes BPF Ring Buffer events asynchronously without blocking socket establishment.
-   - Inspects `/proc/<pid>/` to extract:
-     - Executable path (`/proc/<pid>/exe`)
-     - Command-line arguments (`/proc/<pid>/cmdline`)
-     - Current working directory (`/proc/<pid>/cwd`)
-     - Full process ancestor hierarchy (parent, grandparent, etc., via `/proc/<pid>/status`).
+2. **Deceptive Canary Vending**:
+   The intruder is redirected to a local Go honeypot supporting both IMDSv1 and IMDSv2. When they request security credentials, `imds-canary` returns a trackable Canarytoken. The attacker thinks they succeeded. The moment they use those credentials from anywhere on earth, an AWS tripwire alarm fires!
 
-3. **Honeypot HTTP Service**:
-   - Standard library `net/http` server bound to `127.0.0.1:18080`.
-   - **IMDSv2 Token Negotiation**: `PUT /latest/api/token` returns a base64 session token with configurable TTL (default 6 hours).
-   - **Metadata Listing**: `GET /latest/meta-data/` returns standard directory structure.
-   - **Canary Vending**: `GET /latest/meta-data/iam/security-credentials/<role>` returns standard AWS STS credentials populated with pre-configured Canary tokens.
-   - Also responds to dynamic instance identity documents (`/latest/dynamic/instance-identity/document`) and standard metadata keys (`instance-id`, `ami-id`, `hostname`, `local-ipv4`, `public-ipv4`).
+3. **Complete Process Attribution in Microseconds**:
+   While the connection is redirected, the daemon inspects `/proc` to capture the caller's:
+   - Process ID (`pid`) and Thread ID (`tid`)
+   - Executable path (e.g., `/usr/bin/curl` or `/usr/local/bin/python3`)
+   - Complete command-line arguments (e.g., `["python3", "exploit.py", "--target", "..."]`)
+   - Working directory (`cwd`)
+   - Complete parent and grandparent ancestry chain (e.g., `curl -> bash -> sshd -> systemd`)
 
-4. **SRE Operability & Graceful Lifecycle**:
-   - Enforces privilege checks on Linux (`root` or `CAP_BPF` + `CAP_NET_ADMIN`).
-   - Handles `SIGINT` / `SIGTERM` cleanly, ensuring eBPF programs are detached from cgroup attachment points so host networking is never left modified.
-   - Emits structured JSON alerts using `log/slog`.
+4. **Multi-Channel Alerting & Active Defense**:
+   - **Real-Time Webhooks**: Dispatches HMAC-signed JSON alerts to Slack, Discord, or your SIEM.
+   - **Enterprise SIEM Logs**: Emits structured JSON or ArcSight Common Event Format (CEF) logs.
+   - **Prometheus Metrics**: Exposes `/metrics` tracking intercepted probes and vended credentials.
+   - **Active Containment**: Optionally terminates (`SIGKILL`) or freezes (`SIGSTOP`) the offending process on the spot.
+   - **Sanctioned Process Allowlist**: Excludes legitimate cloud agents (such as `amazon-ssm-agent`) by binary name or path.
 
 ---
 
-## Directory Layout
+## Quickstart
 
-```
-imds-canary/
-├── bpf/
-│   ├── connect_hook.c           # eBPF C source (cgroup/connect4)
-│   └── vmlinux.h                # CO-RE kernel types
-├── cmd/
-│   └── imds-canary/
-│       └── main.go              # Daemon entrypoint, flags, signal lifecycle
-├── internal/
-│   ├── bpf/
-│   │   ├── gen.go               # go:generate bpf2go invocation
-│   │   ├── loader.go            # cilium/ebpf attachment and ring buffer consumer
-│   │   ├── bpf_bpfeb.go         # Generated big-endian BPF Go wrapper
-│   │   ├── bpf_bpfel.go         # Generated little-endian BPF Go wrapper
-│   │   └── bpf_bpf*.o           # Compiled BPF ELF objects
-│   ├── honeypot/
-│   │   ├── server.go            # Mock AWS IMDSv1/v2 HTTP handler
-│   │   └── server_test.go       # Unit tests for token & credential vending
-│   ├── proc/
-│   │   ├── inspector.go         # /proc process lineage and metadata resolution
-│   │   └── inspector_test.go    # Unit tests for ancestry parsing
-│   └── config/
-│       ├── config.go            # Canary token configuration and CLI flags
-│       └── config_test.go       # Unit tests for configuration parsing
-├── scripts/
-│   └── validate.sh              # Automated end-to-end validation script
-├── Makefile                     # bpf2go compilation and binary build
-├── go.mod
-└── go.sum
-```
-
----
-
-## Prerequisites
-
-- **Go**: 1.22+
-- **Linux Kernel**: 5.8+ (for `BPF_MAP_TYPE_RINGBUF` and `cgroup/connect4`)
-- **LLVM / Clang**: with BPF target support (for generating eBPF bytecode via `make generate`)
-
----
-
-## Building
+### 1. Build
 
 ```bash
-# Generate BPF wrappers and build binary
 make all
-
-# Or individually:
-make generate
-make build
 ```
 
-Binary is output to `bin/imds-canary`.
+Output binary: `bin/imds-canary`.
 
----
-
-## Running
-
-### Production Mode (Linux Host / Root)
+### 2. Run in Production (Linux Host / Root)
 
 ```bash
 sudo ./bin/imds-canary \
   -port 18080 \
   -cgroup /sys/fs/cgroup \
   -role production-infra-role \
-  -access-key-id "AKIAEXAMPLECANARYKEY1" \
-  -secret-access-key "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" \
-  -session-token "AQoDYXdzEXAMPLETOKEN"
+  -access-key-id "AKIA-CANARY-TOKEN-ID" \
+  -secret-access-key "SECRET-CANARY-KEY" \
+  -webhook-url "https://hooks.slack.com/services/T00/B00/XXX"
 ```
 
-Environment variables are also supported:
-- `CANARY_ROLE_NAME`
-- `CANARY_ACCESS_KEY_ID`
-- `CANARY_SECRET_ACCESS_KEY`
-- `CANARY_SESSION_TOKEN`
-- `CANARY_ACCOUNT_ID`
+### 3. Run in Dry-Run Mode (Testing without eBPF / Non-Root)
 
-### Dry-Run Mode (Testing without eBPF / non-root)
+You can run and test `imds-canary` on macOS or non-root environments:
 
 ```bash
 ./bin/imds-canary -dry-run -port 18080
 ```
 
----
+### 4. Diagnostic Self-Test
 
-## Testing & Automated Validation
+Verify your alerting and webhook pipeline in CI or staging servers without needing root privileges:
 
-Run all unit tests:
 ```bash
-make test
-```
-
-Run the automated validation script:
-```bash
-make validate
-# or directly:
-./scripts/validate.sh
-```
-
-The validation script starts the daemon, issues:
-```bash
-curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/production-role
-```
-and asserts that the response contains the valid canary credentials while checking that the daemon emitted the matching process attribution security alert.
-
----
-
-## Example Alert Log
-
-When a rogue process queries IMDS, `imds-canary` outputs a structured JSON security alert:
-
-```json
-{
-  "time": "2026-10-24T00:46:15Z",
-  "level": "WARN",
-  "msg": "SECURITY ALERT: AWS IMDS Interception",
-  "alert_type": "IMDS_PROBE_DETECTED",
-  "pid": 4821,
-  "tid": 4821,
-  "uid": 1000,
-  "gid": 1000,
-  "comm": "curl",
-  "original_destination": "169.254.169.254:80",
-  "redirected_destination": "127.0.0.1:18080",
-  "exe": "/usr/bin/curl",
-  "cmdline": ["curl", "-s", "http://169.254.169.254/latest/meta-data/iam/security-credentials/production-role"],
-  "cwd": "/home/user/workspace",
-  "ppid": 4810,
-  "ancestry": [
-    {
-      "pid": 4810,
-      "ppid": 4800,
-      "name": "python3",
-      "exe": "/usr/bin/python3",
-      "cmdline": ["python3", "exploit.py"]
-    },
-    {
-      "pid": 4800,
-      "ppid": 1,
-      "name": "bash",
-      "exe": "/usr/bin/bash",
-      "cmdline": ["bash", "-l"]
-    }
-  ],
-  "process_exited": false
-}
+./bin/imds-canary -test-intercept
 ```
 
 ---
 
-## License
+## Worked Examples
 
-Dual BSD/GPL license for eBPF code; Apache 2.0 / MIT for userspace Go daemon.
+Practical, step-by-step guides for common scenarios:
+
+- [**Example 1: Quickstart in Dry-Run Mode**](examples/01-quickstart-dry-run/README.md) – Test IMDSv1 and IMDSv2 queries locally in 60 seconds.
+- [**Example 2: Simulating & Catching an SSRF Attack**](examples/02-ssrf-simulation/README.md) – Catching an attacker exploiting a vulnerable web application.
+- [**Example 3: Real-Time Slack & Webhook Alerting**](examples/03-slack-webhook-alerting/README.md) – Setting up HMAC-signed notifications to Slack or your SIEM.
+- [**Example 4: Active Threat Containment with SIGKILL**](examples/04-threat-containment-sigkill/README.md) – Automatically killing rogue processes attempting to steal credentials.
+- [**Example 5: Integrating with AWS Canarytokens**](examples/05-aws-canarytokens-setup/README.md) – Generating and loading trackable tokens from Thinkst Canary.
+- [**Example 6: Deploying on EC2 with Systemd**](examples/06-systemd-production-ec2/README.md) – Production deployment on Amazon Linux 2023 or Ubuntu.
+
+---
+
+## Operational Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/healthz` | `GET` | Health and liveness probe (bypasses security alerts) |
+| `/livez` | `GET` | Liveness check for Kubernetes/systemd |
+| `/metrics` | `GET` | Prometheus/OpenMetrics exposition |
+| `/latest/api/token` | `PUT` | IMDSv2 session token negotiation |
+| `/latest/meta-data/` | `GET` | Metadata directory listing |
+| `/latest/meta-data/iam/security-credentials/<role>` | `GET` | Canary AWS STS credentials vending |
+| `/latest/dynamic/instance-identity/document` | `GET` | Mock AWS instance identity document |
+
+---
+
+## Command-Line Options
+
+```
+Usage of imds-canary:
+  -action string
+        Mitigation action on rogue access: alert, pause, kill, none (default "alert")
+  -allowlist string
+        Comma-separated process names or paths permitted to access IMDS
+  -access-key-id string
+        Canary AWS Access Key ID (default "AKIAEXAMPLECANARYKEY1")
+  -secret-access-key string
+        Canary AWS Secret Access Key
+  -session-token string
+        Canary AWS Session Token
+  -role string
+        Mock IAM role name (default "production-infra-role")
+  -port int
+        Honeypot HTTP listen port (default 18080)
+  -cgroup string
+        Cgroup v2 root path for eBPF attachment (default "/sys/fs/cgroup")
+  -dry-run
+        Run HTTP honeypot only without attaching eBPF
+  -log-format string
+        Alert log format: json, text, cef (default "json")
+  -log-level string
+        Log level: debug, info, warn, error (default "info")
+  -webhook-url string
+        URL for asynchronous real-time alert webhooks
+  -webhook-secret string
+        Shared HMAC secret for X-Canary-Signature webhook signing
+  -test-intercept
+        Run diagnostic self-test interception event and exit
+  -version, -v
+        Print version information and exit
+```
+
+---
+
+## Version & License
+
+```
+imds-canary 0.1.0 (commit: feb2576..., date: 2026-10-24T01:47:24Z)
+Copyright (c) 2026 smford
+Licensed under the MIT License
+```
