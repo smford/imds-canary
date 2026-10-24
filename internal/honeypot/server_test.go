@@ -120,3 +120,38 @@ func TestHoneypot_MetadataListing(t *testing.T) {
 		}
 	}
 }
+
+func TestHoneypot_HealthzAndMetrics(t *testing.T) {
+	cfg := config.DefaultConfig()
+	server := NewServer(cfg, nil)
+
+	// Test /healthz
+	reqHealth := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	wHealth := httptest.NewRecorder()
+	server.handleRoot(wHealth, reqHealth)
+
+	respHealth := wHealth.Result()
+	if respHealth.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 on /healthz, got %d", respHealth.StatusCode)
+	}
+	bodyHealth, _ := io.ReadAll(respHealth.Body)
+	respHealth.Body.Close()
+	if !strings.Contains(string(bodyHealth), `"status":"ok"`) {
+		t.Errorf("expected status ok in body: %s", string(bodyHealth))
+	}
+
+	// Test /metrics
+	reqMetrics := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	wMetrics := httptest.NewRecorder()
+	server.handleRoot(wMetrics, reqMetrics)
+
+	respMetrics := wMetrics.Result()
+	if respMetrics.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 on /metrics, got %d", respMetrics.StatusCode)
+	}
+	bodyMetrics, _ := io.ReadAll(respMetrics.Body)
+	respMetrics.Body.Close()
+	if !strings.Contains(string(bodyMetrics), "imds_canary_uptime_seconds") {
+		t.Errorf("expected metric uptime_seconds in /metrics: %s", string(bodyMetrics))
+	}
+}

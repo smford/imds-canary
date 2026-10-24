@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/smford/imds-canary/internal/config"
+	"github.com/smford/imds-canary/internal/metrics"
 )
 
 // SecurityCredentialsResponse represents the AWS STS security credentials JSON schema.
@@ -125,6 +126,21 @@ func (s *Server) Addr() net.Addr {
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Operational endpoints (bypass honeypot alert logs)
+	if path == "/healthz" || path == "/livez" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok","daemon":"imds-canary"}`))
+		return
+	}
+
+	if path == "/metrics" {
+		metrics.Default.Handler().ServeHTTP(w, r)
+		return
+	}
+
 	audit := RequestAudit{
 		Timestamp:  time.Now().UTC(),
 		RemoteAddr: r.RemoteAddr,
@@ -147,8 +163,6 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if onAccess != nil {
 		onAccess(audit)
 	}
-
-	path := r.URL.Path
 
 	// 1. IMDSv2 Session Token Negotiation
 	// PUT /latest/api/token
@@ -254,6 +268,7 @@ func (s *Server) handleTokenNegotiation(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("X-aws-ec2-metadata-token-ttl-seconds", strconv.Itoa(ttlSec))
 	w.WriteHeader(http.StatusOK)
+	metrics.Default.IncTokensVended()
 	_, _ = w.Write([]byte(token))
 }
 
@@ -271,5 +286,6 @@ func (s *Server) handleSecurityCredentials(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	metrics.Default.IncTokensVended()
 	_ = json.NewEncoder(w).Encode(resp)
 }

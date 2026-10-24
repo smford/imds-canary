@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/smford/imds-canary/internal/alerting"
 	"github.com/smford/imds-canary/internal/bpf"
 	"github.com/smford/imds-canary/internal/config"
 	"github.com/smford/imds-canary/internal/honeypot"
+	"github.com/smford/imds-canary/internal/metrics"
 	"github.com/smford/imds-canary/internal/proc"
 	"github.com/smford/imds-canary/internal/version"
 )
@@ -57,12 +59,65 @@ func run(args []string) error {
 	}))
 	slog.SetDefault(logger)
 
+	hostname, _ := os.Hostname()
+
+	// Initialize Webhook Alerting Sender
+	webhookSender := alerting.NewWebhookSender(cfg.WebhookURL, cfg.WebhookSecret, logger)
+	defer webhookSender.Stop()
+
+	// Initialize Process Attribution Inspector
+	inspector := proc.NewInspector()
+
+	// Diagnostic self-test interception mode
+	if cfg.TestIntercept {
+		logger.Info("Executing diagnostic self-test interception probe")
+		pid := uint32(os.Getpid())
+		uid := uint32(os.Getuid())
+		gid := uint32(os.Getgid())
+		snap := inspector.Inspect(pid, uid, gid, "imds-canary-test")
+
+		metrics.Default.IncIntercepts("imds-canary-test")
+		metrics.Default.IncProcsResolved(snap.Exited)
+
+		alert := alerting.AlertPayload{
+			Timestamp:           time.Now().UTC(),
+			AlertType:           "DIAGNOSTIC_SELF_TEST",
+			HostName:            hostname,
+			PID:                 pid,
+			TID:                 pid,
+			UID:                 uid,
+			GID:                 gid,
+			Comm:                "imds-canary-test",
+			OriginalDestination: "169.254.169.254:80",
+			RedirectDestination: cfg.ListenAddr,
+			CanaryRole:          cfg.Credentials.RoleName,
+			ProcessSnapshot:     snap,
+		}
+
+		logger.Warn("DIAGNOSTIC SECURITY ALERT: Test Probe Executed",
+			slog.String("alert_type", alert.AlertType),
+			slog.Uint64("pid", uint64(pid)),
+			slog.String("comm", alert.Comm),
+			slog.String("exe", snap.Exe),
+			slog.Any("cmdline", snap.Cmdline),
+		)
+
+		if cfg.WebhookURL != "" {
+			webhookSender.Send(alert)
+			time.Sleep(500 * time.Millisecond) // Allow queue to flush
+		}
+
+		fmt.Println("[+] Diagnostic self-test completed successfully.")
+		return nil
+	}
+
 	logger.Info("Starting imds-canary daemon",
-		slog.String("version", "1.0.0"),
+		slog.String("version", version.Version),
 		slog.Uint64("honeypot_port", uint64(cfg.HoneypotPort)),
 		slog.String("cgroup_path", cfg.CgroupPath),
 		slog.String("canary_role", cfg.Credentials.RoleName),
 		slog.Bool("dry_run", cfg.DryRun),
+		slog.Bool("webhook_configured", cfg.WebhookURL != ""),
 	)
 
 	// Check privileges unless dry-run
@@ -74,9 +129,6 @@ func run(args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
-	// Initialize Process Attribution Inspector
-	inspector := proc.NewInspector()
 
 	// Initialize IMDS Honeypot HTTP Service
 	honeyServer := honeypot.NewServer(cfg, logger)
@@ -94,8 +146,11 @@ func run(args []string) error {
 	if !cfg.DryRun {
 		bpfLoader = bpf.NewLoader(cfg.CgroupPath, cfg.HoneypotPort, logger)
 		bpfLoader.SetHandler(func(evt bpf.Event) {
+			metrics.Default.IncIntercepts(evt.Comm)
+
 			// Resolve process lineage and command-line metadata asynchronously
 			snap := inspector.Inspect(evt.TGID, evt.UID, evt.GID, evt.Comm)
+			metrics.Default.IncProcsResolved(snap.Exited)
 
 			logger.Warn("SECURITY ALERT: AWS IMDS Interception",
 				slog.String("alert_type", "IMDS_PROBE_DETECTED"),
@@ -113,6 +168,24 @@ func run(args []string) error {
 				slog.Any("ancestry", snap.Ancestry),
 				slog.Bool("process_exited", snap.Exited),
 			)
+
+			// Dispatch webhook notification
+			if cfg.WebhookURL != "" {
+				webhookSender.Send(alerting.AlertPayload{
+					Timestamp:           time.Now().UTC(),
+					AlertType:           "IMDS_PROBE_DETECTED",
+					HostName:            hostname,
+					PID:                 evt.TGID,
+					TID:                 evt.PID,
+					UID:                 evt.UID,
+					GID:                 evt.GID,
+					Comm:                evt.Comm,
+					OriginalDestination: fmt.Sprintf("%s:%d", evt.OrigDstIP, evt.TargetPort),
+					RedirectDestination: fmt.Sprintf("%s:%d", evt.RedirDstIP, evt.RedirPort),
+					CanaryRole:          cfg.Credentials.RoleName,
+					ProcessSnapshot:     snap,
+				})
+			}
 		})
 
 		if err := bpfLoader.Start(ctx); err != nil {

@@ -23,9 +23,12 @@ type Config struct {
 	ListenAddr   string
 	CgroupPath   string
 	Credentials  CanaryCredentials
-	LogLevel     string
-	DryRun       bool // Useful for testing without attaching eBPF to cgroup
-	ShowVersion  bool
+	LogLevel      string
+	DryRun        bool // Useful for testing without attaching eBPF to cgroup
+	ShowVersion   bool
+	WebhookURL    string
+	WebhookSecret string
+	TestIntercept bool
 }
 
 // DefaultConfig returns safe and functional default settings.
@@ -42,8 +45,11 @@ func DefaultConfig() *Config {
 			RoleName:        getEnvOrDefault("CANARY_ROLE_NAME", "production-infra-role"),
 			AccountID:       getEnvOrDefault("CANARY_ACCOUNT_ID", "123456789012"),
 		},
-		LogLevel: "info",
-		DryRun:   false,
+		LogLevel:      "info",
+		DryRun:        false,
+		WebhookURL:    os.Getenv("CANARY_WEBHOOK_URL"),
+		WebhookSecret: os.Getenv("CANARY_WEBHOOK_SECRET"),
+		TestIntercept: false,
 	}
 }
 
@@ -62,6 +68,9 @@ func ParseFlags(args []string) (*Config, error) {
 	fs.StringVar(&cfg.Credentials.SecretAccessKey, "secret-access-key", cfg.Credentials.SecretAccessKey, "Canary AWS Secret Access Key")
 	fs.StringVar(&cfg.Credentials.Token, "session-token", cfg.Credentials.Token, "Canary AWS Session Token")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "Run HTTP honeypot only without attaching eBPF")
+	fs.StringVar(&cfg.WebhookURL, "webhook-url", cfg.WebhookURL, "URL for asynchronous real-time alert webhooks")
+	fs.StringVar(&cfg.WebhookSecret, "webhook-secret", cfg.WebhookSecret, "Shared HMAC secret for X-Canary-Signature webhook signing")
+	fs.BoolVar(&cfg.TestIntercept, "test-intercept", false, "Run diagnostic self-test interception event and exit")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print version information and exit")
 	fs.BoolVar(&cfg.ShowVersion, "v", false, "Print version information and exit (shorthand)")
 
